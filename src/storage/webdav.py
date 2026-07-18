@@ -1,13 +1,13 @@
+from src.config import NEXTCLOUD_URL
 import os
 from webdav4.client import Client
 from prefect.blocks.system import Secret
-from src.config import NEXTCLOUD_URL
 
 def create_webdav_client() -> Client:
     """Factory function to create a fresh, authenticated WebDAV client."""
     print("Authenticating with Prefect Vault...")
     nc_user = Secret.load("nextcloud-username").get()
-    nc_pass = Secret.load("nextcloud-app-password").get()
+    nc_pass = Secret.load("nextcloud-password").get()
     return Client(NEXTCLOUD_URL, auth=(nc_user, nc_pass))
 
 def upload_file(client: Client, local_path: str, remote_path: str):

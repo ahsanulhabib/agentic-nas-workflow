@@ -1,13 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-# Load the .env file
+# 1. Load routing configuration from .env
 load_dotenv()
 
-NEXTCLOUD_URL = os.getenv("NEXTCLOUD_URL")
-NC_USER = os.getenv("NEXTCLOUD_USER")
-NC_PASS = os.getenv("NEXTCLOUD_APP_PASSWORD")
+NEXTCLOUD_URL = os.getenv("NEXTCLOUD_URL", "http://192.168.1.55:30027/remote.php/webdav")
 INGEST_DIR = os.getenv("INGEST_DIR", "/cloud_ingest/gdrive_ahabib9387")
 
-if not NC_PASS:
-    raise ValueError("CRITICAL: Nextcloud credentials not found in .env!")
+# Ensure Prefect knows where its own API is
+os.environ["PREFECT_API_URL"] = os.getenv("PREFECT_API_URL", "http://192.168.1.55:4200/api")

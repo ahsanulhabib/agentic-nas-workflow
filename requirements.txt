@@ -2,3 +2,4 @@ prefect>=3.0.0
 webdav4
 blake3
 python-dotenv
+ipykernel

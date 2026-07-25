@@ -54,6 +54,7 @@ cover/
 # Secrets & Local State
 chroma/
 .prefect/
+data/*
 
 # Translations
 *.mo

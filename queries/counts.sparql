@@ -1,0 +1,6 @@
+SELECT ?class (COUNT(?s) AS ?count)
+WHERE {
+  ?s a ?class .
+}
+GROUP BY ?class
+ORDER BY DESC(?count)

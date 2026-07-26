@@ -1,0 +1,20 @@
+@prefix nas: <https://example.org/nas/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <https://schema.org/> .
+
+nas:File a rdfs:Class .
+nas:Folder a rdfs:Class .
+nas:TaxonomyConcept a rdfs:Class .
+nas:KnowledgeGraph a rdfs:Class .
+
+nas:path a rdfs:Property .
+nas:filename a rdfs:Property .
+nas:extension a rdfs:Property .
+nas:mediaClass a rdfs:Property .
+nas:locatedIn a rdfs:Property .
+nas:candidateKind a rdfs:Property .
+nas:confidenceScore a rdfs:Property .
+nas:evidenceFileCount a rdfs:Property .
+nas:evidencePath a rdfs:Property .
+
+nas:File rdfs:subClassOf schema:DigitalDocument .

@@ -1,0 +1,9 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix nas: <https://example.org/nas/> .
+
+nas:FileShape a sh:NodeShape ;
+    sh:targetClass nas:File ;
+    sh:property [
+        sh:path nas:path ;
+        sh:minCount 1 ;
+    ] .

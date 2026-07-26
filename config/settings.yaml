@@ -1,0 +1,70 @@
+project:
+  name: agentic-nas-workflow
+  environment: local
+
+paths:
+  ledger_db: data/ledger.db
+  artifacts: artifacts
+  inventory: artifacts/inventory.parquet
+  profile: artifacts/profile.json
+  snapshots: artifacts/snapshots
+  okf: knowledge/okf
+  kg_export: knowledge/kg/export
+  kg_runtime: artifacts/fuseki/databases
+  proposals: artifacts/proposals
+  decisions: artifacts/decisions
+
+ledger:
+  readonly: true
+  auto_detect_table: true
+  preferred_tables:
+    - filecache
+    - files
+    - file
+    - ledger
+
+taxonomy:
+  min_files: 20
+  min_persistence_runs: 3
+  min_confidence: 0.80
+  max_change_rate: 0.10
+  minimum_theme_tokens: 2
+  max_candidates: 100
+
+kg:
+  backend: fuseki
+  fuseki_url: http://localhost:3030
+  dataset: nas
+  graph_uri: https://example.org/nas/graph/current
+  request_timeout_seconds: 30
+  max_neighbourhood_nodes: 100
+
+graphrag:
+  max_graph_hops: 2
+  max_context_items: 60
+  max_sources: 30
+  answer_requires_evidence: true
+  enable_text_retrieval: false
+  enable_embeddings: false
+
+llm:
+  provider: gemini
+  model: gemini-2.5-pro
+  base_url: http://localhost:8000/v1
+  temperature: 0.0
+  max_output_tokens: 4096
+  secret_blocks:
+    gemini_api_key: nas-gemini-api-key
+    llm_api_key: nas-llm-api-key
+
+dashboard:
+  max_inventory_rows: 5000
+  max_graph_nodes: 200
+  page_title: Agentic NAS Workflow
+
+prefect:
+  work_pool: local-process
+  timezone: Australia/Canberra
+  safe_pipeline_cron: "0 2 * * 0"
+  agent_proposal_cron: "0 3 * * 0"
+  graph_rag_eval_cron: "0 4 * * 0"

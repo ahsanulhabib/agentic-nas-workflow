@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
 import argparse
 import json
 from pathlib import Path
 
 from src.config import load_settings, root_path
-from src.inventory.analytics import extension_profile, summary, top_level_profile
+from src.inventory.analytics import summary
 from src.inventory.build import build_inventory
 from src.kg.builder import build_graph
 from src.kg.fuseki import FusekiClient
@@ -12,6 +14,7 @@ from src.kg.query import graph_counts
 from src.ledger import LedgerReader
 from src.pipeline.stages import run_graph_rag, run_safe_pipeline
 from src.state.snapshot import compare_snapshots, create_snapshot
+
 
 def main():
     parser = argparse.ArgumentParser()

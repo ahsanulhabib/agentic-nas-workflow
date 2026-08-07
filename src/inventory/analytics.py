@@ -1,6 +1,10 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
 from collections import Counter
+
 import pandas as pd
+
 
 def top_level_profile(df: pd.DataFrame) -> pd.DataFrame:
     grouped = (

@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
 import os
-import time
+
 from prefect import flow, task
 from prefect.cache_policies import NO_CACHE
 from src.dedupe.crypto import calculate_blake3
 from src.storage.webdav import create_webdav_client, upload_file
+
 
 @task(retries=2, retry_delay_seconds=5)
 def task_hash_file(file_path: str) -> str:

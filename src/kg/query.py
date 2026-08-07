@@ -1,5 +1,8 @@
+#!/usr/bin/env python3
 from __future__ import annotations
+
 from typing import Any
+
 from src.kg.fuseki import FusekiClient
 
 # Pre-defined SPARQL query to count node types

@@ -1,8 +1,10 @@
-import os
+#!/usr/bin/env python3
 import sqlite3
-import yaml
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
+
 
 class OKFBuilder:
     def __init__(self, db_path: Path, okf_dir: Path):
@@ -17,15 +19,19 @@ class OKFBuilder:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        # Group files by their parent directory
+        # Register the missing REVERSE function in SQLite
+        conn.create_function("REVERSE", 1, lambda text: text[::-1] if text else "")
+
+        # Execute query targeting the correct 'file_ledger' table
         cursor = conn.execute("""
             SELECT 
-                SUBSTR(nextcloud_path, 1, LENGTH(nextcloud_path) - INSTR(REVERSE(nextcloud_path), '/')) AS folder_path,
+                SUBSTR(nextcloud_path, 1, LENGTH(nextcloud_path) - INSTR(REVERSE(nextcloud_path), '/')) AS folder_path, 
                 COUNT(id) as file_count
-            FROM production_inventory
+            FROM file_ledger
             GROUP BY folder_path
             ORDER BY folder_path ASC;
         """)
+
         folders = cursor.fetchall()
         
         index_links = []

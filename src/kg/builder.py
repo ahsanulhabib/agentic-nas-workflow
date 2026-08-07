@@ -1,8 +1,11 @@
-import sqlite3
+#!/usr/bin/env python3
 import hashlib
+import sqlite3
 from pathlib import Path
+
 from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import RDF, RDFS
+from rdflib.namespace import RDF
+
 
 def _uri(kind: str, value: str) -> URIRef:
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]

@@ -1,5 +1,7 @@
+#!/usr/bin/env python3
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance
+from qdrant_client.models import Distance, VectorParams
+
 
 def init_qdrant(url: str = "http://localhost:6333", collection_name: str = "nas_multimodal"):
     """Initializes the Qdrant connection and ensures the collection exists."""

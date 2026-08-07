@@ -1,7 +1,9 @@
-
+#!/usr/bin/env python3
 from __future__ import annotations
+
 import sqlite3
 from pathlib import Path
+
 
 class LedgerReader:
     """Read-only SQLite ledger reader with conservative schema detection."""

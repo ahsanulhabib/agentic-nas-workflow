@@ -2,6 +2,18 @@ project:
   name: agentic-nas-workflow
   environment: local
 
+nextcloud:
+  url: http://192.168.1.55:30027/remote.php/webdav
+  secret_blocks:
+    username: nextcloud-username
+    password: nextcloud-password
+
+ingestion:
+  cloud_sources:
+    google_drive: /cloud_ingest/gdrive_ahabib9387
+    one_drive: /cloud_ingest/onedrive
+  remote_base_dir: /Documents
+
 paths:
   ledger_db: data/ledger.db
   artifacts: artifacts
@@ -17,11 +29,7 @@ paths:
 ledger:
   readonly: true
   auto_detect_table: true
-  preferred_tables:
-    - filecache
-    - files
-    - file
-    - ledger
+  preferred_tables: [filecache, files, file, ledger]
 
 taxonomy:
   min_files: 20
@@ -33,7 +41,7 @@ taxonomy:
 
 kg:
   backend: fuseki
-  fuseki_url: http://localhost:3030
+  fuseki_url: http://192.168.1.55:3030
   dataset: nas
   graph_uri: https://example.org/nas/graph/current
   request_timeout_seconds: 30
@@ -50,12 +58,12 @@ graphrag:
 llm:
   provider: gemini
   model: gemini-2.5-pro
-  base_url: http://localhost:8000/v1
+  base_url: http://192.168.1.55:8000/v1
   temperature: 0.0
   max_output_tokens: 4096
   secret_blocks:
-    gemini_api_key: nas-gemini-api-key
-    llm_api_key: nas-llm-api-key
+    gemini_api_key: gemini-api-key
+    llm_api_key: llm-api-key
 
 dashboard:
   max_inventory_rows: 5000
@@ -64,7 +72,7 @@ dashboard:
 
 prefect:
   work_pool: local-process
-  timezone: Australia/Canberra
+  timezone: Australia/Sydney
   safe_pipeline_cron: "0 2 * * 0"
   agent_proposal_cron: "0 3 * * 0"
   graph_rag_eval_cron: "0 4 * * 0"

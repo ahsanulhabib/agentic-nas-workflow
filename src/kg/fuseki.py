@@ -1,5 +1,8 @@
-import requests
+#!/usr/bin/env python3
 from pathlib import Path
+
+import requests
+
 
 class FusekiClient:
     def __init__(self, base_url: str, dataset: str):

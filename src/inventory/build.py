@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
 from __future__ import annotations
-from pathlib import Path
+
 import json
+from pathlib import Path
+
 import pandas as pd
+
 from src.inventory.features import classify_extension, path_features
 from src.ledger import LedgerReader
 

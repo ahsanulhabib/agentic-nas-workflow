@@ -1,6 +1,8 @@
+#!/usr/bin/env python3
 from pathlib import Path
-import json
+
 from src.state.snapshot import compare_snapshots, list_snapshots
+
 
 def run_snapshot_audit(snapshot_dir: Path) -> dict:
     """

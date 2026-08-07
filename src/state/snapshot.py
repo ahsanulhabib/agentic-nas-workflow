@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
 from __future__ import annotations
-from datetime import datetime, timezone
-from pathlib import Path
+
 import hashlib
 import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 import pandas as pd
+
 
 def create_snapshot(df: pd.DataFrame, root: str | Path) -> Path:
     root = Path(root)

@@ -1,10 +1,14 @@
+#!/usr/bin/env python3
 from pathlib import Path
+
 from openai import OpenAI
 from webdav4.client import Client
-from src.state.schema import init_v5_schema
+
+from src.elt.ingestion import execute_ingestion
 from src.elt.scanner import scan_sources
 from src.elt.strategy import generate_strategy
-from src.elt.ingestion import execute_ingestion
+from src.state.schema import init_v5_schema
+
 
 def run_ingestion_pipeline(db_path: Path, nextcloud_mount: Path, cloud_sources: dict[str, str], llm_client: OpenAI, webdav_client: Client, model_name: str, dry_run: bool = False):
     """

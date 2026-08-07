@@ -1,11 +1,14 @@
+#!/usr/bin/env python3
 from pathlib import Path
+
 from src.config import load_settings, root_path
 from src.inventory.build import build_inventory
-from src.state.snapshot import create_snapshot
-from src.okf.builder import OKFBuilder
 from src.kg.builder import build_rdf_graph
 from src.kg.fuseki import FusekiClient
+from src.okf.builder import OKFBuilder
+from src.state.snapshot import create_snapshot
 from src.vector.multimodal import index_unprocessed_files
+
 
 def run_knowledge_pipeline(db_path: Path, nextcloud_mount: Path):
     """

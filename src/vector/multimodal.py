@@ -1,7 +1,13 @@
+#!/usr/bin/env python3
 import os
 import sqlite3
 from pathlib import Path
+
+import torch
+from PIL import Image
 from qdrant_client.models import PointStruct
+from transformers import CLIPModel, CLIPProcessor
+
 from src.vector.qdrant_client import init_qdrant
 
 # Lazy-loaded models to save RAM
@@ -18,7 +24,6 @@ def _get_text_model():
     return _text_model
 
 def _get_image_model():
-    from transformers import CLIPProcessor, CLIPModel
     global _image_model, _image_processor
     if _image_model is None:
         print("Loading HuggingFace CLIP Image Model...")
@@ -33,7 +38,7 @@ def index_unprocessed_files(db_path: Path, nextcloud_mount: Path, qdrant_url: st
     conn.row_factory = sqlite3.Row
     
     # Fetch files that haven't been vector indexed
-    cursor = conn.execute("SELECT id, nextcloud_path, sha256_hash FROM production_inventory WHERE vector_indexed = 0")
+    cursor = conn.execute("SELECT id, nextcloud_path, blake3_hash FROM production_inventory WHERE vector_indexed = 0")
     unprocessed = cursor.fetchall()
     
     if not unprocessed:
@@ -51,7 +56,7 @@ def index_unprocessed_files(db_path: Path, nextcloud_mount: Path, qdrant_url: st
         if not local_path.exists():
             continue
 
-        payload = {"path": remote_path, "hash": row["sha256_hash"], "type": "unknown"}
+        payload = {"path": remote_path, "hash": row["blake3_hash"], "type": "unknown"}
         vectors = {}
 
         try:
@@ -60,14 +65,13 @@ def index_unprocessed_files(db_path: Path, nextcloud_mount: Path, qdrant_url: st
                 with open(local_path, "r", encoding="utf-8", errors="ignore") as f:
                     text = f.read()[:2000] # Truncate for speed
                 text_model = _get_text_model()
-                embedding = list(text_model.embed([text]))[0].tolist()
+                embedding = next(iter(text_model.embed([text]))).tolist()
                 vectors["text"] = embedding
                 payload["type"] = "document"
 
             # --- IMAGE EMBEDDING (CLIP) ---
             elif ext in [".jpg", ".jpeg", ".png"]:
-                from PIL import Image
-                import torch
+                
                 processor, model = _get_image_model()
                 image = Image.open(local_path).convert("RGB")
                 inputs = processor(images=image, return_tensors="pt")
@@ -85,7 +89,7 @@ def index_unprocessed_files(db_path: Path, nextcloud_mount: Path, qdrant_url: st
                 points.append(PointStruct(id=row["id"], vector=vectors, payload=payload))
                 conn.execute("UPDATE production_inventory SET vector_indexed = 1 WHERE id = ?", (row["id"],))
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"   [Error] Failed to embed {remote_path}: {e}")
 
     if points:

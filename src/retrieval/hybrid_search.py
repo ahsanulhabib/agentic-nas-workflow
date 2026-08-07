@@ -1,9 +1,11 @@
-import os
-from qdrant_client import QdrantClient
-from src.kg.fuseki import FusekiClient
-from src.vector.multimodal import _get_text_model, _get_image_model
-from openai import OpenAI
+#!/usr/bin/env python3
 import instructor
+from openai import OpenAI
+from qdrant_client import QdrantClient
+
+from src.kg.fuseki import FusekiClient
+from src.vector.multimodal import _get_image_model, _get_text_model
+
 
 class HybridRetriever:
     def __init__(self, fuseki_url: str, qdrant_url: str, llm_client: OpenAI, model_name: str):

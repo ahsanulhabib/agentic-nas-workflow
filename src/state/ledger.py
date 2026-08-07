@@ -1,5 +1,6 @@
-import sqlite3
+#!/usr/bin/env python3
 import os
+import sqlite3
 from datetime import datetime, timezone
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))

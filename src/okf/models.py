@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, Field
 
 
@@ -19,6 +17,7 @@ class OKFFolderSchema(BaseModel):
     source_path: str
     domain: str = "general"
     area: str = "uncategorized"
+    trust_tier: int = Field(default=1, description="Trust Tier for conflict resolution (1 = Highest)")
     metrics: OKFMetrics
     tags: list[str] = Field(default_factory=list)
 
@@ -26,6 +25,7 @@ class OKFIndexSchema(BaseModel):
     okf_version: str = "0.2"
     type: str = "index"
     name: str = "NAS Master Taxonomy"
+    trust_tier: int = Field(default=1)
     generated_at: str
     total_files_indexed: int
     total_folders_indexed: int

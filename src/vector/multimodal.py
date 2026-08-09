@@ -1,100 +1,190 @@
-#!/usr/bin/env python3
-import os
+from __future__ import annotations  # noqa: EXE002
+
 import sqlite3
 from pathlib import Path
+from typing import Any
 
-import torch
-from PIL import Image
 from qdrant_client.models import PointStruct
-from transformers import CLIPModel, CLIPProcessor
 
-from src.vector.qdrant_client import init_qdrant
+from src.config import load_settings
+from src.vector.chunking import recursive_text_chunker
+from src.vector.models import VectorPayloadSchema
+from src.vector.qdrant_client import init_qdrant_collections
 
-# Lazy-loaded models to save RAM
-_text_model = None
-_image_model = None
-_image_processor = None
+# Universal Embedder Singleton
+_embedder_instance = None
 
-def _get_text_model():
-    from fastembed import TextEmbedding
-    global _text_model
-    if _text_model is None:
-        print("Loading FastEmbed Text Model (BAAI/bge-small-en-v1.5)...")
-        _text_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
-    return _text_model
+class UniversalEmbedder:
+    """
+    Universal Embedding Factory.
+    Dynamically loads and abstracts any HuggingFace, FastEmbed, or Jina model.
+    """
+    def __init__(self, provider: str, model_name: str, vector_size: int):
+        self.provider = provider
+        self.model_name = model_name
+        self.vector_size = vector_size
+        self._model = None
+        self._load_model()
 
-def _get_image_model():
-    global _image_model, _image_processor
-    if _image_model is None:
-        print("Loading HuggingFace CLIP Image Model...")
-        _image_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        _image_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    return _image_processor, _image_model
+    def _load_model(self):
+        print(f"🧠 Loading Vector Model: [{self.model_name}] (Dim: {self.vector_size})...")
+        if self.provider == "fastembed":
+            from fastembed import TextEmbedding
+            self._model = TextEmbedding(model_name=self.model_name)
+            self.is_multimodal = False
+        else:
+            # HuggingFace / Transformers (Supports Jina-CLIP, BGE-M3, Nomic, MXBAI, etc.)
+            from transformers import AutoModel
+            self._model = AutoModel.from_pretrained(self.model_name, trust_remote_code=True)
+            # Check if model supports image encoding natively
+            self.is_multimodal = hasattr(self._model, "encode_image") or "clip" in self.model_name.lower()
 
-def index_unprocessed_files(db_path: Path, nextcloud_mount: Path, qdrant_url: str):
-    """Generates embeddings for new files and uploads to Qdrant."""
-    client = init_qdrant(url=qdrant_url)
+    def embed_text(self, texts: list[str]) -> list[list[float]]:
+        if not texts: return []
+        
+        if self.provider == "fastembed":
+            return [emb.tolist() for emb in self._model.embed(texts)]
+        elif hasattr(self._model, "encode_text"):
+            # Jina / Custom Transformer models
+            embeddings = self._model.encode_text(texts)
+            return [emb.tolist() if hasattr(emb, "tolist") else emb for emb in embeddings]
+        else:
+            # Standard SentenceTransformers / HuggingFace models
+            from sentence_transformers import SentenceTransformer
+            if not isinstance(self._model, SentenceTransformer):
+                self._model = SentenceTransformer(self.model_name, trust_remote_code=True)
+            return self._model.encode(texts, convert_to_numpy=True).tolist()
+
+    def embed_image(self, image_path: Path) -> list[float] | None:
+        if not self.is_multimodal:
+            return None
+            
+        from PIL import Image
+        image = Image.open(image_path).convert("RGB")
+        
+        if hasattr(self._model, "encode_image"):
+            emb = self._model.encode_image([image])[0]
+            return emb.tolist() if hasattr(emb, "tolist") else emb
+        return None
+
+def get_embedder() -> UniversalEmbedder:
+    global _embedder_instance
+    if _embedder_instance is None:
+        settings = load_settings()
+        vec_cfg = settings["vector"]
+        _embedder_instance = UniversalEmbedder(
+            provider=vec_cfg["provider"],
+            model_name=vec_cfg["model_name"],
+            vector_size=int(vec_cfg["vector_size"])
+        )
+    return _embedder_instance
+
+def index_unprocessed_files(db_path: Path | str, nextcloud_mount: Path | str, qdrant_url: str = "http://localhost:6333", batch_size: int = 50) -> dict[str, Any]:
+    """
+    Parameterized Vector Pipeline:
+    Embeds documents and images using whatever model is configured in settings.yaml!
+    """
+    db_path = Path(db_path)
+    nextcloud_mount = Path(nextcloud_mount)
+    settings = load_settings()
+    
+    client = init_qdrant_collections(qdrant_url)
+    embedder = get_embedder()
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     
-    # Fetch files that haven't been vector indexed
-    cursor = conn.execute("SELECT id, nextcloud_path, blake3_hash FROM production_inventory WHERE vector_indexed = 0")
+    cursor = conn.execute("""
+        SELECT id, nextcloud_path, blake3_hash, file_size 
+        FROM production_inventory 
+        WHERE vector_indexed = 0 
+        LIMIT ?
+    """, (batch_size,))
     unprocessed = cursor.fetchall()
-    
-    if not unprocessed:
-        print("✅ No new files require Vector Indexing.")
-        return
 
-    print(f"🧠 Generating Multimodal Embeddings for {len(unprocessed)} files...")
-    points = []
-    
+    if not unprocessed:
+        conn.close()
+        return {"status": "up_to_date", "indexed_points": 0}
+
+    points: list[PointStruct] = []
+    indexed_file_ids, failed_file_ids = [], []
+
     for row in unprocessed:
-        remote_path = row["nextcloud_path"]
+        remote_path = str(row["nextcloud_path"])
+        file_id = row["id"]
+        content_hash = str(row["blake3_hash"])
         local_path = nextcloud_mount / "admin" / "files" / remote_path.lstrip("/")
-        ext = os.path.splitext(local_path)[1].lower()
-        
+        ext = local_path.suffix.lower()
+
         if not local_path.exists():
+            failed_file_ids.append(file_id)
             continue
 
-        payload = {"path": remote_path, "hash": row["blake3_hash"], "type": "unknown"}
-        vectors = {}
-
         try:
-            # --- TEXT EMBEDDING (Documents/Markdown/Txt) ---
+            # --- 1. DOCUMENTS ---
             if ext in [".txt", ".md", ".csv"]:
-                with open(local_path, "r", encoding="utf-8", errors="ignore") as f:
-                    text = f.read()[:2000] # Truncate for speed
-                text_model = _get_text_model()
-                embedding = next(iter(text_model.embed([text]))).tolist()
-                vectors["text"] = embedding
-                payload["type"] = "document"
-
-            # --- IMAGE EMBEDDING (CLIP) ---
-            elif ext in [".jpg", ".jpeg", ".png"]:
+                text_content = local_path.read_text(encoding="utf-8", errors="ignore")
+                chunks = recursive_text_chunker(text_content, chunk_size=1024, overlap=128)
                 
-                processor, model = _get_image_model()
-                image = Image.open(local_path).convert("RGB")
-                inputs = processor(images=image, return_tensors="pt")
-                with torch.no_grad():
-                    image_features = model.get_image_features(**inputs)
-                vectors["image"] = image_features[0].tolist()
-                payload["type"] = "image"
-                
-            # --- AUDIO/VIDEO (Stub for future Whisper/FFMPEG integration) ---
-            elif ext in [".mp4", ".mp3"]:
-                print(f"   [Skip] Audio/Video embedding requires FFMPEG/Whisper pipeline: {remote_path}")
-                continue
+                if chunks:
+                    embeddings = embedder.embed_text(chunks)
+                    for chunk_idx, (chunk_str, emb) in enumerate(zip(chunks, embeddings)):
+                        payload = VectorPayloadSchema(
+                            document_id=file_id,
+                            source_path=remote_path,
+                            filename=local_path.name,
+                            extension=ext,
+                            media_type="document",
+                            chunk_id=chunk_idx,
+                            total_chunks=len(chunks),
+                            content_hash=content_hash,
+                            taxonomy_category=str(local_path.parent.name),
+                            embedding_model=embedder.model_name
+                        ).model_dump()
+                        
+                        point_id = int(f"{file_id}{chunk_idx:03d}")
+                        points.append(PointStruct(id=point_id, vector=emb, payload=payload))
+                    indexed_file_ids.append(file_id)
 
-            if vectors:
-                points.append(PointStruct(id=row["id"], vector=vectors, payload=payload))
-                conn.execute("UPDATE production_inventory SET vector_indexed = 1 WHERE id = ?", (row["id"],))
+            # --- 2. IMAGES (If model supports vision) ---
+            elif ext in [".jpg", ".jpeg", ".png"] and embedder.is_multimodal:
+                image_emb = embedder.embed_image(local_path)
+                if image_emb:
+                    payload = VectorPayloadSchema(
+                        document_id=file_id,
+                        source_path=remote_path,
+                        filename=local_path.name,
+                        extension=ext,
+                        media_type="image",
+                        content_hash=content_hash,
+                        taxonomy_category=str(local_path.parent.name),
+                        embedding_model=embedder.model_name
+                    ).model_dump()
+
+                    points.append(PointStruct(id=file_id * 1000, vector=image_emb, payload=payload))
+                    indexed_file_ids.append(file_id)
+            else:
+                # Unsupported media type for current model
+                failed_file_ids.append(file_id)
 
         except Exception as e:  # noqa: BLE001
-            print(f"   [Error] Failed to embed {remote_path}: {e}")
+            print(f"⚠️ [Poison Pill] Failed to index {remote_path}: {e}")
+            failed_file_ids.append(file_id)
 
     if points:
-        client.upsert(collection_name="nas_multimodal", points=points)
-        conn.commit()
-        print(f"✅ Successfully indexed {len(points)} vectors into Qdrant.")
-        
+        client.upsert(collection_name=settings["vector"]["collection_name"], points=points)
+
+    for fid in indexed_file_ids:
+        conn.execute("UPDATE production_inventory SET vector_indexed = 1 WHERE id = ?", (fid,))
+    for fid in failed_file_ids:
+        conn.execute("UPDATE production_inventory SET vector_indexed = -1 WHERE id = ?", (fid,))
+
+    conn.commit()
     conn.close()
+
+    return {
+        "status": "success",
+        "processed_files": len(unprocessed),
+        "indexed_points": len(points),
+        "poison_pills_isolated": len(failed_file_ids)
+    }

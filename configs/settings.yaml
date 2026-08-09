@@ -65,6 +65,14 @@ llm:
     gemini_api_key: gemini-api-key
     llm_api_key: llm-api-key
 
+vector:
+  provider: huggingface           # huggingface, fastembed, or openai
+  model_name: jinaai/jina-clip-v1  # Any HuggingFace/MTEB model name
+  vector_size: 1024               # Must match model's output dim (1024, 768, 384)
+  distance_metric: Cosine         # Cosine, Dot, or Euclidean
+  collection_name: nas_multimodal
+  batch_size: 50
+
 dashboard:
   max_inventory_rows: 5000
   max_graph_nodes: 200

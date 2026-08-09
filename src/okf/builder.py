@@ -1,66 +1,125 @@
-#!/usr/bin/env python3
+from __future__ import annotations  # noqa: EXE002
+
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+from src.okf.models import OKFFolderSchema, OKFIndexSchema, OKFMetrics
+
 
 class OKFBuilder:
-    def __init__(self, db_path: Path, okf_dir: Path):
-        self.db_path = db_path
-        self.okf_dir = okf_dir
+    """Enterprise OKF v0.2 Knowledge Base Generator."""
+    
+    def __init__(self, db_path: Path | str, okf_dir: Path | str):
+        self.db_path = Path(db_path)
+        self.okf_dir = Path(okf_dir)
+        self.domains_dir = self.okf_dir / "domains"
+        self.areas_dir = self.okf_dir / "areas"
         self.folders_dir = self.okf_dir / "folders"
-        self.okf_dir.mkdir(parents=True, exist_ok=True)
-        self.folders_dir.mkdir(parents=True, exist_ok=True)
+        
+        for d in [self.okf_dir, self.domains_dir, self.areas_dir, self.folders_dir]:
+            d.mkdir(parents=True, exist_ok=True)
 
-    def build(self):
-        """Generates the OKF Markdown graph from the production inventory."""
+    def _determine_domain_and_area(self, folder_path: str) -> tuple[str, str]:
+        parts = [p for p in folder_path.strip("/").split("/") if p]
+        if not parts:
+            return "root", "root"
+        domain = parts[0].lower()
+        area = parts[1].lower() if len(parts) > 1 else "general"
+        return domain, area
+
+    def build(self) -> dict[str, Any]:
+        if not self.db_path.exists():
+            raise FileNotFoundError(f"Database not found at {self.db_path}")
+
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        # Register the missing REVERSE function in SQLite
-        conn.create_function("REVERSE", 1, lambda text: text[::-1] if text else "")
-
-        # Execute query targeting the correct 'file_ledger' table
         cursor = conn.execute("""
             SELECT 
-                SUBSTR(nextcloud_path, 1, LENGTH(nextcloud_path) - INSTR(REVERSE(nextcloud_path), '/')) AS folder_path, 
-                COUNT(id) as file_count
-            FROM file_ledger
+                SUBSTR(nextcloud_path, 1, LENGTH(nextcloud_path) - INSTR(REVERSE(nextcloud_path), '/')) AS folder_path,
+                COUNT(id) as file_count,
+                SUM(file_size) as total_size,
+                MIN(ingested_at) as first_seen,
+                MAX(ingested_at) as last_updated
+            FROM production_inventory
+            WHERE nextcloud_path IS NOT NULL AND nextcloud_path != ''
             GROUP BY folder_path
             ORDER BY folder_path ASC;
         """)
+        rows = cursor.fetchall()
+        conn.close()
 
-        folders = cursor.fetchall()
-        
-        index_links = []
-        for row in folders:
-            folder_path = row['folder_path']
-            if not folder_path: continue
-                
+        if not rows:
+            return {"status": "empty", "folders_created": 0}
+
+        total_files = 0
+        domains_map: dict[str, list[str]] = {}
+
+        for row in rows:
+            folder_path = row['folder_path'] or "/Root"
+            domain, area = self._determine_domain_and_area(folder_path)
+            
             safe_name = folder_path.strip("/").replace("/", "-").replace(" ", "_").lower() or "root"
             filename = f"{safe_name}.md"
             
-            frontmatter = {
-                "type": "folder",
-                "name": folder_path.split("/")[-1] or "Root",
-                "source_path": folder_path,
-                "file_count": row['file_count']
-            }
+            metrics = OKFMetrics(
+                file_count=row['file_count'],
+                total_size_bytes=row['total_size'] or 0,
+                first_seen=str(row['first_seen']),
+                last_updated=str(row['last_updated'])
+            )
             
-            body = f"# Directory: {folder_path}\n\nThis directory contains {row['file_count']} files.\n"
+            folder_meta = OKFFolderSchema(
+                name=folder_path.split("/")[-1] or "Root",
+                source_path=folder_path,
+                domain=domain,
+                area=area,
+                metrics=metrics,
+                tags=[domain, area]
+            )
             
-            # Write Concept File
-            with open(self.folders_dir / filename, "w", encoding="utf-8") as f:
-                f.write(f"---\n{yaml.dump(frontmatter, sort_keys=False)}---\n\n{body}\n")
-                
-            index_links.append(f"- [[folders/{safe_name}]] ({row['file_count']} files)")
+            # Markdown Body Construction
+            body = f"# Folder Concept: {folder_meta.name}\n\n"
+            body += f"Canonical Path: `{folder_path}`\n\n"
+            body += f"## Domain & Area\n- **Domain:** [[domains/{domain}]]\n- **Area:** [[areas/{area}]]\n\n"
+            body += "## Metrics\n"
+            body += f"- Total Files: **{metrics.file_count}**\n"
+            body += f"- Total Volume: **{metrics.total_size_bytes / (1024*1024):.2f} MB**\n\n"
+            body += "## Sub-Concepts & Links\n*(Dynamically updated by taxonomy agent)*\n"
 
-        # Write Master Index
-        index_fm = {"type": "index", "name": "NAS Master Taxonomy", "generated_at": datetime.now(timezone.utc).isoformat()}
-        with open(self.okf_dir / "index.md", "w", encoding="utf-8") as f:
-            f.write(f"---\n{yaml.dump(index_fm, sort_keys=False)}---\n\n# NAS Master Taxonomy\n\n" + "\n".join(index_links))
-            
-        conn.close()
-        print(f"✅ OKF Knowledge Base built at {self.okf_dir}")
+            # Write validated OKF document
+            frontmatter_dict = folder_meta.model_dump()
+            content = f"---\n{yaml.dump(frontmatter_dict, sort_keys=False)}---\n\n{body}"
+            (self.folders_dir / filename).write_text(content, encoding="utf-8")
+
+            total_files += metrics.file_count
+            domains_map.setdefault(domain, []).append(f"[[folders/{safe_name}]]")
+
+        # Build Domain index files
+        for domain, links in domains_map.items():
+            domain_body = f"# Domain: {domain.title()}\n\n## Folders in this domain:\n"
+            domain_body += "\n".join(f"- {link}" for link in links)
+            (self.domains_dir / f"{domain}.md").write_text(domain_body, encoding="utf-8")
+
+        # Build Master Index
+        index_meta = OKFIndexSchema(
+            generated_at=datetime.now(timezone.utc).isoformat(),
+            total_files_indexed=total_files,
+            total_folders_indexed=len(rows)
+        )
+        index_body = f"# NAS Master Taxonomy Index\n\nTotal Files: **{total_files}** | Total Folders: **{len(rows)}**\n\n## Domains\n"
+        index_body += "\n".join(f"- [[domains/{d}]] ({len(l)} folders)" for d, l in domains_map.items())
+
+        content = f"---\n{yaml.dump(index_meta.model_dump(), sort_keys=False)}---\n\n{index_body}"
+        (self.okf_dir / "index.md").write_text(content, encoding="utf-8")
+
+        return {
+            "status": "success",
+            "files_indexed": total_files,
+            "folders_created": len(rows),
+            "domains_created": len(domains_map)
+        }

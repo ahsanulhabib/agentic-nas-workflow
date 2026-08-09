@@ -37,6 +37,8 @@ def load_settings() -> dict[str, Any]:
     _env_override(settings, "NAS_LLM_MODEL", ("llm", "model"))
     _env_override(settings, "NAS_LLM_BASE_URL", ("llm", "base_url"))
     _env_override(settings, "NEXTCLOUD_URL", ("nextcloud", "url"))
+    _env_override(settings, "NAS_VECTOR_MODEL", ("vector", "model_name"))
+    _env_override(settings, "NAS_VECTOR_SIZE", ("vector", "vector_size"))
     
     return settings
 

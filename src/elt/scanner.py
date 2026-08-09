@@ -39,13 +39,21 @@ def scan_sources(db_path: Path, sources: dict[str, str | Path]):
         table_name = f"staging_{safe_source}"
         
         scanned_count = 0
-        # SRE FIX: Pure pathlib recursive search
+
         for file_path in source_path.rglob("*"):
             if file_path.is_file():
                 file_hash = calculate_blake3(file_path)
                 stat = file_path.stat()
                 mtime = stat.st_mtime
                 size = stat.st_size
+
+                if size == 0:
+                    conn.execute(f"""
+                        INSERT INTO {table_name} (original_path, filename, file_size, blake3_hash, mtime, status)
+                        VALUES (?, ?, 0, 'ZERO_BYTE_FILE', ?, 'zero_byte')
+                        ON CONFLICT(original_path) DO NOTHING
+                    """, (str(file_path), file_path.name, stat.st_mtime))
+                    continue
                 
                 conn.execute(f"""
                     INSERT INTO {table_name} (original_path, filename, file_size, blake3_hash, mtime, status)
